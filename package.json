@@ -1,0 +1,22 @@
+{
+  "name": "receptron",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "env-cmd ./config.env nodemon --inspect -r esm src/index.js"
+  },
+  "author": "Viktor Kravchuk",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "cheerio": "^1.0.0-rc.3",
+    "dotenv": "^8.2.0",
+    "esm": "^3.2.25",
+    "node-telegram-bot-api": "^0.50.0"
+  },
+  "devDependencies": {
+    "env-cmd": "^8.0.2"
+  }
+}
