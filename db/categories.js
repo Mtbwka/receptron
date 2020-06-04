@@ -73,7 +73,7 @@ export default [
   },
   {
     id: 19,
-    title: 'Сука и конд.',
+    title: 'Мука и конд.',
   },
   {
     id: 20,

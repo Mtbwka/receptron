@@ -1,66 +1,114 @@
 import TelegramBot from 'node-telegram-bot-api';
-import axios from 'axios';
-import cheerio from 'cheerio';
+
 import categories from '../db/categories';
 import products from '../db/products';
 import chunkArray from './helpers/chunkArray';
+import * as enums from './helpers/enums';
+import sendSelectedProducts from './helpers/sendSelectedProducts';
+import sendMenu from './helpers/sendMenu';
 
-const url = 'https://mnevkusno.ru';
-
-const fetchData = async () => {
-  const res = await axios.post(`${url}/searchbyingredients`, {
-    ingredients: ['pork-22', 'bulb-onion', 'carrot-1'],
-  });
-
-  debugger;
-
-  return cheerio.load(res.data);
-};
-
-// Create a bot that uses 'polling' to fetch new updates
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-const providedPoducts = [];
+let selectedProducts = [];
 
-bot.on('message', async (msg) => {
-  const product = products.find((p) => p.title === msg.text);
+// Menu or Start command
+bot.onText(/\/menu|\/start/, async msg => sendMenu(bot, msg.chat.id));
 
+bot.on('message', msg => {
+  const product = products.find(p => p.title === msg.text);
   if (product) {
-    providedPoducts.push(product);
-    bot.sendMessage(msg.chat.id, `Добавлено ${product.title}`);
-  } else {
-    debugger;
+    const isDuplicate = selectedProducts.find(p => p.title === product.title);
+    if (isDuplicate) {
+      return bot.sendMessage(
+        msg.chat.id,
+        `${product.title} уже находится в списке ингредиентов`
+      );
+    }
 
-    bot.sendMessage(msg.chat.id, 'Выберите категорию из списка', {
+    selectedProducts.push(product);
+    bot.sendMessage(msg.chat.id, `Добавлено ${product.title}`, {
       reply_markup: {
-        inline_keyboard: chunkArray(
-          categories.map((c) => ({ text: c.title, callback_data: c.id })),
-          2
-        ),
+        inline_keyboard: [
+          [
+            { text: 'Меню', callback_data: enums.MENU },
+            { text: 'Список ингредиентов', callback_data: enums.SHOW_LIST },
+          ],
+        ],
       },
     });
+  }
 
-    bot.on('callback_query', (query) => {
-      const { message: { chat, message_id, text } = {} } = query;
+  // return bot.sendMessage(msg.chat.id, `Не найдено`);
+});
 
-      const filteredProducts = chunkArray(
-        products
-          .filter((p) => p.category === Number(query.data))
-          .map((p) => p.title),
-        3
-      );
-      if (filteredProducts.length > 0) {
-        bot.sendMessage(chat.id, 'Выберите продукт', {
-          reply_markup: {
-            keyboard: filteredProducts,
-          },
-        });
-      } else {
-        bot.sendMessage(chat.id, 'Not found!');
+bot.on('callback_query', query => {
+  const { message: { chat, message_id, text } = {} } = query;
+
+  if (query.data === enums.MENU) {
+    return sendMenu(bot, chat.id);
+  }
+
+  if (query.data === enums.SHOW_LIST) {
+    return sendSelectedProducts(bot, chat.id, selectedProducts);
+  }
+
+  if (query.data === enums.DELETE_MODE) {
+    return bot.sendMessage(
+      chat.id,
+      'Выберите ингредиент который нужно удалить',
+      {
+        reply_markup: {
+          inline_keyboard: chunkArray(
+            selectedProducts.map(c => ({
+              text: c.title,
+              callback_data: `DELETE ${c.slug}`,
+            })),
+            3
+          ),
+        },
       }
+    );
+  }
+
+  const productToRemove = query.data.match(/DELETE (.+)/i);
+  if (productToRemove && productToRemove[1]) {
+    selectedProducts = selectedProducts.filter(
+      p => p.slug !== productToRemove[1]
+    );
+
+    if (selectedProducts.length > 0)
+      return sendSelectedProducts(bot, chat.id, selectedProducts);
+    else
+      return bot.sendMessage(chat.id, 'Список пуст', {
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Меню', callback_data: enums.MENU }]],
+        },
+      });
+  }
+
+  const data = categories.find(c => c.id === Number(query.data))
+    ? enums.CATEGORY
+    : enums.PRODUCT;
+
+  if (data === enums.CATEGORY) {
+    const filteredProducts = chunkArray(
+      products.filter(p => p.category === Number(query.data)).map(p => p.title),
+      3
+    );
+
+    bot.sendMessage(chat.id, 'Выберите продукт из встроенной клавиатуры', {
+      reply_markup: {
+        keyboard: filteredProducts,
+      },
     });
   }
 });
 
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, `${providedPoducts.map((p) => p.title)} `);
+bot.onText(/\/list/, msg => {
+  if (selectedProducts.length > 0)
+    sendSelectedProducts(bot, msg.chat.id, selectedProducts);
+  else
+    bot.sendMessage(
+      msg.chat.id,
+      'Список пуст. Введите /menu для того чтобы начать'
+    );
 });
